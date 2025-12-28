@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Check formatting
+        run: ruff format --check acomparator test
+
+      - name: Check linting
+        run: ruff check acomparator test
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libchromaprint-tools
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+
+      - name: Run tests
+        run: pytest test/test_comparison.py -v
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: [lint, test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - target: linux-x86_64
+            runner: ubuntu-latest
+          - target: linux-aarch64
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Build executable
+        run: |
+          pyinstaller \
+            --onefile \
+            --name acomparator-${{ matrix.target }} \
+            --hidden-import=acomparator \
+            --collect-all librosa \
+            --collect-all audioread \
+            --log-level ERROR \
+            acomparator/cli.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: acomparator-${{ matrix.target }}
+          path: dist/acomparator-${{ matrix.target }}
+
+  release:
+    name: Create Release
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          cp artifacts/acomparator-linux-x86_64/acomparator-linux-x86_64 release/
+          cp artifacts/acomparator-linux-aarch64/acomparator-linux-aarch64 release/
+          chmod +x release/*
+
+      - name: Generate version
+        id: version
+        run: |
+          VERSION="v$(date -u +'%Y.%m.%d-%H%M')-$(git rev-parse --short HEAD)"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
+          body: |
+            Automated release from commit ${{ github.sha }}
+
+            ## Downloads
+            - `acomparator-linux-x86_64` - Linux x86_64 (most desktop/server Linux)
+            - `acomparator-linux-aarch64` - Linux ARM64 (Raspberry Pi 4+, AWS Graviton, etc.)
+
+            ## Usage
+            ```bash
+            chmod +x acomparator-linux-*
+            ./acomparator-linux-x86_64 --help
+            ```
+          files: |
+            release/acomparator-linux-x86_64
+            release/acomparator-linux-aarch64
+          draft: false
+          prerelease: false

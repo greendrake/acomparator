@@ -1,0 +1,1 @@
+"""Audio segment extraction functionality."""
