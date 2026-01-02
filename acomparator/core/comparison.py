@@ -157,6 +157,23 @@ def _classify_audio_pair(
 
     # Check for phase inversion (correlation ≈ -1)
     if avg_corr < -0.95:
+        # Very short phase inversions (<0.15s) with high spectral similarity
+        # are almost always encoding artifacts, not intentional edits
+        # (different encoders/mastering can flip polarity in short segments)
+        is_very_short_phase = min_len < int(0.15 * sr)
+        if is_very_short_phase:
+            try:
+                mfcc_a = librosa.feature.mfcc(y=a, sr=sr, n_mfcc=13)
+                mfcc_b = librosa.feature.mfcc(y=b, sr=sr, n_mfcc=13)
+                min_frames = min(mfcc_a.shape[1], mfcc_b.shape[1])
+                if min_frames > 0:
+                    mfcc_a_flat = mfcc_a[:, :min_frames].flatten()
+                    mfcc_b_flat = mfcc_b[:, :min_frames].flatten()
+                    mfcc_corr = np.corrcoef(mfcc_a_flat, mfcc_b_flat)[0, 1]
+                    if mfcc_corr > 0.90:
+                        return DifferenceClass.ENCODING
+            except Exception:
+                pass
         return DifferenceClass.PHASE_INVERSION
 
     # Check for gain difference with otherwise identical content
@@ -179,6 +196,7 @@ def _classify_audio_pair(
             mfcc_b_flat = mfcc_b[:, :min_frames].flatten()
             mfcc_corr = np.corrcoef(mfcc_a_flat, mfcc_b_flat)[0, 1]
 
+            # For spectral similarity, check if mastering/encoding difference
             if mfcc_corr > 0.80:
                 rms_a_env = librosa.feature.rms(y=a)[0]
                 rms_b_env = librosa.feature.rms(y=b)[0]
@@ -197,6 +215,28 @@ def _classify_audio_pair(
                         return DifferenceClass.ENCODING
                 else:
                     return DifferenceClass.ENCODING
+
+            # For short segments with good spectral and envelope similarity,
+            # likely mastering difference rather than intentional edit
+            is_short = min_len < int(0.6 * sr)
+            if is_short and mfcc_corr > 0.80:
+                rms_a_env = librosa.feature.rms(y=a)[0]
+                rms_b_env = librosa.feature.rms(y=b)[0]
+                min_rms = min(len(rms_a_env), len(rms_b_env))
+                if min_rms > 1:
+                    rms_corr = np.corrcoef(rms_a_env[:min_rms], rms_b_env[:min_rms])[
+                        0, 1
+                    ]
+                    if np.isnan(rms_corr):
+                        rms_corr = 0.0
+                    rms_ratio = rms_a / rms_b if rms_b > 1e-6 else 0
+
+                    # Classify as encoding/mastering if:
+                    # - RMS levels are similar (not silenced/heavily filtered)
+                    # - Either envelope is similar OR MFCC is very high
+                    #   (very high MFCC = same content, dynamics may differ)
+                    if 0.5 < rms_ratio < 2.0 and (rms_corr > 0.5 or mfcc_corr > 0.95):
+                        return DifferenceClass.ENCODING
         except Exception:
             pass
 

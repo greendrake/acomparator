@@ -129,8 +129,9 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.version }}
           name: Release ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          append_body: true
           body: |
-            Automated release from commit ${{ github.sha }}
 
             ## Downloads
             - `acomparator-linux-x86_64` - Linux x86_64 (most desktop/server Linux)

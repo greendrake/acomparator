@@ -4,7 +4,7 @@ CLI tool for comparing two audio files to determine if they are from the same so
 
 Typical use cases:
 
-- You have several different audio files of ostentibly the same audio track. They may differ by quality, start offset, level, some mastering differences — all this does not make the tracks themselves different as far as you are concerned. However, there could be actual mixing differences e.g. different effects, samples, or outright some chunks edited out/added. You need to find out which of the two cases it is, and if there are mixing differences, what and where they exactly are.
+- You have several different audio files of ostensibly the same audio track. They may differ by quality, start offset, level, some mastering differences — all this does not make the tracks themselves different as far as you are concerned. However, there could be actual mixing differences e.g. different effects, samples, or outright some chunks edited out/added. You need to find out which of the two cases it is, and if there are mixing differences, what and where they exactly are.
 - You have two audio tracks for a movie, and suspect that they may actually be slightly different e.g. some words in one of them could be silenced/replaced. You need to find out whether this is the case, and what/where those different fragments, if any, are.
 
 ## Features
