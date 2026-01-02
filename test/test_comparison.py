@@ -128,6 +128,41 @@ def test_different_mastering_same_source():
     assert result["overall_similarity"] > 0.85
 
 
+def test_fadein_alignment():
+    """1.7 - Alignment uses main content, not fade-in timing.
+
+    This tests that alignment correctly handles files with different fade-in timing.
+    File structure:
+    - source.wav: Original audio
+    - source_fadein_offset.wav: 2s silence + 100ms pre-fade noise + 200ms fade-in
+
+    The fade-in modification creates a real difference (detected at 0-0.3s), but
+    the KEY TEST is that alignment offset is accurate (~-2.1s), not influenced
+    by the pre-fade noise timing.
+
+    Before the fix:
+    - Waveform refinement could lock onto pre-fade noise timing
+    - Alignment offset could be off by the pre-fade duration (~100ms error)
+    - This caused cascading misalignment throughout the comparison
+
+    After the fix:
+    - _find_substantial_audio_start() skips fade-ins (uses 10x higher RMS threshold)
+    - Refinement validates that it improves correlation before accepting
+    - Alignment correctly uses main content (~2.1s offset)
+    """
+    result = run_compare("source.wav", "source_fadein_offset.wav")
+    # The fade-in modification is a real difference, so partial_match is expected
+    # The key assertion: alignment offset should be ~-2.1s (2s silence + 100ms pre-fade)
+    # Before fix: offset might be off by pre-fade or fade-in timing (~100-300ms error)
+    # After fix: offset should be within ~50ms of -2.1s
+    assert -2.15 < result["alignment_offset_seconds"] < -2.05
+    # Only the fade-in region should be detected as different (0-0.3s)
+    # If alignment was wrong, we'd see many more differences
+    assert len(result["differences"]) <= 1
+    # Overall similarity should be high (content matches after alignment)
+    assert result["overall_similarity"] > 0.85
+
+
 # =============================================================================
 # 2. Partial Match (Edited) Tests
 # =============================================================================

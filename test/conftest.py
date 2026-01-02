@@ -21,6 +21,7 @@ GENERATED_FILES = [
     "source_with_trailing.wav",
     "source_encoding_then_content_diff.wav",
     "source_different_mastering.wav",
+    "source_fadein_offset.wav",
     "edited_silence.wav",
     "edited_reversed.wav",
     "edited_phase_inverted.wav",
@@ -161,6 +162,40 @@ def _generate_all_fixtures(source: np.ndarray, sr: int) -> None:
     sf.write(
         FIXTURES_DIR / "source_different_mastering.wav",
         np.concatenate([offset_60ms, different_mastering, trailing_2s]),
+        sr,
+    )
+
+    # 1.7 - Fade-in alignment test: refinement validation prevents bad alignment
+    # This tests that waveform refinement validation prevents incorrect alignments
+    # when fade-in timing could mislead the cross-correlation.
+    #
+    # Structure:
+    # - File A (source.wav): Original audio
+    # - File B (source_fadein_offset.wav):
+    #   - 2s silence prefix
+    #   - 100ms of very low-level "pre-fade" noise (simulates early fade-in start)
+    #   - 200ms fade-in with the noise blended into actual audio
+    #   - Rest of audio identical to source (offset by ~2.1s total)
+    #
+    # The pre-fade noise creates a scenario where:
+    # - Coarse alignment (chroma) gives ~-2.1s offset
+    # - Old refinement might lock onto the pre-fade noise timing
+    # - New refinement validates correlation and keeps the correct offset
+    silence_2s = np.zeros(int(2.0 * sr))
+
+    # Create pre-fade noise (very low level, represents early fade-in start)
+    prefade_len = int(0.1 * sr)  # 100ms
+    prefade_noise = np.random.randn(prefade_len) * 0.001  # Very quiet noise
+
+    # Apply fade-in to first 200ms of audio
+    fadein_len = int(0.2 * sr)
+    fadein_curve = np.linspace(0, 1, fadein_len) ** 2  # Quadratic fade-in
+    source_with_fadein = source.copy()
+    source_with_fadein[:fadein_len] = source[:fadein_len] * fadein_curve
+
+    sf.write(
+        FIXTURES_DIR / "source_fadein_offset.wav",
+        np.concatenate([silence_2s, prefade_noise, source_with_fadein]),
         sr,
     )
 
